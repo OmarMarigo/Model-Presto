@@ -1,3 +1,6 @@
 data/
 env/
 gedi_output.nc/
+.DS_Store
+.vscode/
+.idea/
