@@ -16,9 +16,6 @@ from rasterio.transform import xy
 from rasterio.transform import rowcol
 from dotenv import load_dotenv
 import pandas as pd
-import rasterio
-import shapely
-import geemap
 import wxee
 import xarray 
 import numpy as np
@@ -26,8 +23,8 @@ from datetime import datetime
 import os 
 import rasterio
 from rasterio.transform import from_origin
-from rasterio.enums import Resampling
-import  matplotlib.pyplot as plt
+
+
 
 
 load_dotenv()
