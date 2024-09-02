@@ -17,22 +17,16 @@ from rasterio.transform import rowcol
 from dotenv import load_dotenv
 import pandas as pd
 import wxee
-import xarray 
+import xarray
 import numpy as np
 from datetime import datetime
-import os 
+import os
 import rasterio
 from rasterio.transform import from_origin
-
-
-
 
 load_dotenv()
 
 ee.Authenticate()
-
-
-
 
 
 def get_projections(anchor_point=None):
@@ -51,14 +45,11 @@ def get_projections(anchor_point=None):
     }
     proj = Proj(crs, preserve_units=True)
     proj_inverse = Transformer.from_proj(proj, 'EPSG:4326', always_xy=True).transform
-    
+
     return partial(transform, proj), partial(transform, proj_inverse)
 
 
-import geopandas as gpd
-import shapely.geometry
-import json
-from shapely.geometry import mapping
+
 
 
 def load_file_apply_buffer_square(data_path, geometry="geometry", side=2560):
@@ -68,7 +59,7 @@ def load_file_apply_buffer_square(data_path, geometry="geometry", side=2560):
         data_africa = data[data['Continent_Code'] == 3]
         data_africa = data_africa[data_africa["End_Year"] >= 2019]
 
-        center = data_africa[geometry].centroid
+        center = data_africa[geometry]
 
         buffers = []
 
@@ -102,7 +93,7 @@ def get_gedi(polygons, output_path: str, start_date="2019-01-01", end_date="2019
 
     all_datasets = []
 
-    for i, polygon_coords in enumerate(polygons) :
+    for i, polygon_coords in enumerate(polygons):
         # Ensure the polygon coordinates are in the correct format
         try:
             roi = ee.Geometry.Polygon(polygon_coords)
@@ -117,13 +108,13 @@ def get_gedi(polygons, output_path: str, start_date="2019-01-01", end_date="2019
             .map(set_time_start)
 
         da = dataset_collection.wx.to_xarray(region=roi, scale=10)
+        print(da.dims)
         df = da.to_dataframe().reset_index()
 
         if 'time' in df.columns:
             df['date'] = pd.to_datetime(df['time']).dt.date  # Extract only the date
             df = df.drop(columns=['time'])
             df = df.rename(columns={"date": "time"})
-
 
         all_datasets.append(df)
 
@@ -138,7 +129,6 @@ def get_sentinel1_monthly(polygons, output_path, year=2019):
         default_bands = [ee.Image.constant(-1).rename(band).clip(roi) for band in band_names]
         default_image = ee.Image.cat(default_bands)
         return default_image
-
 
     all_datasets = []
     for i, polygon_coords in enumerate(polygons):
@@ -178,7 +168,7 @@ def get_sentinel1_monthly(polygons, output_path, year=2019):
             else:
                 print(f"No valid images found for month {month} in polygon {i + 1}:")
 
-                band_names =['VV','VH','angle']
+                band_names = ['VV', 'VH', 'angle']
                 default_image = create_default_image(roi, band_names)
                 composite = default_image.set('system:time_start', start_date.timestamp() * 1000)
             images.append(composite)
@@ -212,6 +202,7 @@ def get_sentinel2_monthly(polygons, output_path, year=2019):
         default_bands = [ee.Image.constant(-1).rename(band).clip(roi) for band in band_names]
         default_image = ee.Image.cat(default_bands)
         return default_image
+
     all_datasets = []
     for i, polygon_coords in enumerate(polygons):
         # Ensure the polygon coordinates are in the correct format
@@ -249,7 +240,8 @@ def get_sentinel2_monthly(polygons, output_path, year=2019):
             else:
                 print(f"No valid images found for month {month} in polygon {i + 1}:")
 
-                band_names =['B1','B2','B3','B4','B5','B6','B7','B8','B8A','B9','B11','B12','AOT','WVP','SCL','TCI_R','TCI_G','TCI_B','MSK_CLDPRB','MSK_SNWPRB','QA10','QA20','QA60']
+                band_names = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12', 'AOT', 'WVP',
+                              'SCL', 'TCI_R', 'TCI_G', 'TCI_B', 'MSK_CLDPRB', 'MSK_SNWPRB', 'QA10', 'QA20', 'QA60']
 
                 default_image = create_default_image(roi, band_names)
                 composite = default_image.set('system:time_start', start_date.timestamp() * 1000)
@@ -264,30 +256,20 @@ def get_sentinel2_monthly(polygons, output_path, year=2019):
     final_df.to_csv(f"sentinel_2_{year}.csv", index=False)
 
 
-
-
-
-
-
-
 if __name__ == "__main__":
-    #with rasterio.open("/Users/clementkm/Documents/School/TOLBI STAGE /PROJECT/Data_Collection_and_Processing/gedi_output.nc/201904_042E_012N.tif") as src:
-        #print(src.read().shape)
-    #exit()
+    # with rasterio.open("/Users/clementkm/Documents/School/TOLBI STAGE /PROJECT/Data_Collection_and_Processing/gedi_output.nc/201904_042E_012N.tif") as src:
+    # print(src.read().shape)
+    # exit()
     wxee.Initialize(project=os.getenv("ID_NAME_PROJECT_EE"))
 
-    POLYGON_COORDS = load_file_apply_buffer_square("/Users/clementkm/Documents/School/TOLBI STAGE /PROJECT/Data_Collection_and_Processing/data/GeoJson/df_african.geojson")
+    POLYGON_COORDS = load_file_apply_buffer_square(
+        "/Users/clementkm/Documents/School/TOLBI STAGE /PROJECT/Data_Collection_and_Processing/data/GeoJson/df_african.geojson")
     OUT_PATH_SENTINEL_1 = os.getenv("OUT_PATH_SENTINEL_1")
     OUT_PATH_SENTINEL_2 = os.getenv("OUT_PATH_SENTINEL_2")
     OUT_PATH_FUSED = os.getenv("OUT_PATH_FUSED")
 
     # Récupérer les données GEDI, Sentinel-1 et Sentinel-2
-    get_gedi(POLYGON_COORDS, output_path="/Users/clementkm/Documents/School/TOLBI STAGE /PROJECT/Data_Collection_and_Processing/gedi_output.nc")
-    #get_sentinel1_monthly(POLYGON_COORDS, OUT_PATH_SENTINEL_1)
-    #get_sentinel2_monthly(POLYGON_COORDS, OUT_PATH_SENTINEL_2)
-
-
-
-
-
-
+    get_gedi(POLYGON_COORDS,
+             output_path="/Users/clementkm/Documents/School/TOLBI STAGE /PROJECT/Data_Collection_and_Processing/gedi_output.nc")
+    # get_sentinel1_monthly(POLYGON_COORDS, OUT_PATH_SENTINEL_1)
+    # get_sentinel2_monthly(POLYGON_COORDS, OUT_PATH_SENTINEL_2)
