@@ -633,9 +633,10 @@ def get_dynamic_world_mode(polygon,start_date="2020-12-01",end_date="2020-12-31"
     upload_to_gcs(os.path.join(temp_directory,filename),blob_name)
     return os.path.join(temp_directory,filename)
     
-def main(data_path,start_date,end_date,scale=10,side=2560,class_name='Crop'):
+def main(data_path,start_date,end_date,scale=10,side=2560):
     gdf = read_geojson_from_gcs(bucket_name, data_crop_mapping_path)
-    dataset_path=data_path.split(".geojson")[0]+"_dataset_"+f"{start_date}_{end_date}"
+    dataset_name=data_path.split("/")[-1].split(".geojson")[0]+"_dataset_"+f"{start_date}_{end_date}" 
+    dataset_path=os.path.join(base_dir_dataset_path,dataset_name)
     os.makedirs(dataset_path,exist_ok=True)
     geoms=gdf.geometry
     gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i"))
@@ -647,7 +648,7 @@ def main(data_path,start_date,end_date,scale=10,side=2560,class_name='Crop'):
         dowload_for_one_polygon(i,polygon,start_date,end_date,dataset_path,scale)
         filename_dw=get_dynamic_world_mode(polygon,start_date,end_date,dataset_path,'{}_dynamic_world.tif'.format(i),scale)
         create_mask(os.path.join(dataset_path,'{}_S1_composite.tif'.format(i)),dataset_path,'{}_label.tif'.format(i),shapes,filename_dw)
-        break
+  
 def upload_to_gcs(source_file_path, destination_blob_name):
     
     blob = bucket.blob(destination_blob_name)
@@ -666,17 +667,14 @@ if __name__ == "__main__":
     data_crop_mapping_path=os.getenv("DATA_CROP_MAPPING_PATH")
     start_date=os.getenv("START_DATE")
     end_date=os.getenv("END_DATE")
-    
-
     scale=int(os.getenv("SCALE"))
     side=int(os.getenv("SIDE"))
     bucket_name=os.getenv("BUCKET")
     bucket_repository=os.getenv("BUCKET_REPOSITORY")
     bucket = storage_client.bucket(bucket_name)
-
-
-
-
+    base_dir_dataset_path=os.getenv("BASE_DIR_DATASET_PATH")
+    class_name=os.getenv("CLASS_NAME")
+    os.makedirs(base_dir_dataset_path,exist_ok=True)
 
     main(data_crop_mapping_path,start_date,end_date)
 
