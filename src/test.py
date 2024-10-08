@@ -1,53 +1,66 @@
-import ee
-cloud_project = 'ee-tolbico2024'
+import rasterio
+import geopandas as gpd
+from rasterio.features import rasterize
+import numpy as np
+from matplotlib import pyplot as plt
+polygons_path = "/Users/maika/Desktop/preprocessing-geospatial-data/data/geometry/Cartagraphie des cultures.geojson"
+gdf = gpd.read_file(polygons_path)
 
-try:
-        ee.Initialize(project=cloud_project)
-except:
-        ee.Authenticate()
-        ee.Initialize(project=cloud_project)
-import ee
-cloud_project = 'ee-tolbico2024'
+CLASSES=gdf["Renseigner la culture"].unique()
+print(CLASSES)
+CODES= {CLASSES[i].lower().replace(' - ','+').replace("é","e").replace("ï","i"):i+8 for i in range(len(CLASSES)) if CLASSES[i]!=None }
 
-try:
-        ee.Initialize(project=cloud_project)
-except:
-        ee.Authenticate()
-        ee.Initialize(project=cloud_project)
+polygons_path = "/Users/maika/Desktop/preprocessing-geospatial-data/data/geometry/arachide_sample_4326.geojson"
+gdf = gpd.read_file(polygons_path)
 
-
-def dowload_one_polygon(id,polygon,year,month,directory_path_input,directory_path_output):
-    apply_gedi_month(polygon,year,month,directory_path_output,f"{id}_gedi_{year}_{month}.tif")
-    apply_sentinel1_month(polygon,year,month,directory_path_input,f"{id}_S1_{year}_{month}.tif")
-    apply_sentinel2_monthly(polygon,year,month,directory_path_input,f"{id}_S2_{year}_{month}.tif")
-    apply_srtm(polygon,directory_path,f"{id}_srtm.tif")
-    add_nicfi_monthly(id,polygon,year,month,directory_path,f"{id}_nicfi_{year}_{month}.tif")
-    apply_landsat8_month(polygon,year,month,directory_path,f"{id}_LC8_{year}_{month}.tif")
-
-def load_file_apply_buffer_square(data_path, geometry="geometry", side=2560):
-    if data_path is not None:
-        data = gpd.read_file(data_path).head(5)
+CLASSES=gdf["Crop"].unique()
+print(CLASSES)
+CODES2= {CLASSES[i].lower().replace(' - ','+').replace("é","e").replace("ï","i"):i+8 for i in range(len(CLASSES)) if CLASSES[i]!=None }
+print(len(CODES2))
+print(CODES2)
+CODES2.update({k: len(CODES2) for k in CODES if k not in CODES2})
+print(len(CODES2))
+print(CODES2)
 
 
-        center = data[geometry]
-        ids=data['id']
+# Charger le raster avec rasterio
+raster_path = "/Users/maika/Desktop/preprocessing-geospatial-data/data/geometry/arachide_sample_4326_dataset/0_S1_composite.tif"
+raster_path="/Users/maika/Desktop/preprocessing-geospatial-data/data/geometry/arachide_sample_4326_dataset/0_dynamic_world.tif"
+with rasterio.open(raster_path) as src:
+    raster = src.read(1)  # Lire la première bande du raster
+    out_meta = src.meta
+    raster_shape = raster.shape
+    print(raster_shape)
+    plt.imshow(raster)
+    plt.show()
+    
+exit()
+# Charger les polygones avec Geopandas
+polygons_path = "/Users/maika/Desktop/preprocessing-geospatial-data/data/geometry/arachide_sample_4326.geojson"
 
-        buffers = []
+gdf = gpd.read_file(polygons_path)
+print(gdf)
 
-        for i,centroid in enumerate(center):
-            proj, proj_inverse = get_projections(centroid)
-            cartesian_center = proj(centroid)
-            cartesian_square = cartesian_center.buffer(side / 2, cap_style=3)
 
-            geodesic_square = proj_inverse(cartesian_square)
+# Assigner les classes à chaque polygone
+ # Ajuster les noms de culture selon vos données
 
-            # Convert to a list of lists, ensuring the polygon is closed
-            coords = list(geodesic_square.exterior.coords)
-            if coords[0] != coords[-1]:
-                coords.append(coords[0])  # Ensure the polygon is closed
+# Créer une liste de tuples (geometry, value) pour rasterize
+shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf['Code_crop'])]
 
-            buffers.append([ids[i],coords])  # Ensure it's a list of lists of coordinates
+# Créer un tableau numpy initialisé avec des valeurs de 0 (pour les zones hors des polygones)
+mask = np.zeros(raster_shape, dtype=np.uint8)
 
-        return buffers
-    else:
-        return "Error: File path is not provided."
+# Rasterizer les polygones dans le masque
+mask = rasterize(shapes=shapes, out_shape=raster_shape, fill=0, out=mask, transform=out_meta['transform'], dtype='uint8',)
+
+# Sauvegarder le masque en tant que raster
+output_path = "masque_classes.tif"
+out_meta.update({"count": 1, "dtype": 'uint8','nodata':100})
+print(out_meta)
+with rasterio.open(output_path, "w", **out_meta) as dest:
+    dest.write(mask, 1)
+
+print(f"Le masque a été créé et sauvegardé dans {output_path}")
+
+
