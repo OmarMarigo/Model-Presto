@@ -6,6 +6,7 @@ from shapely.ops import transform
 from functools import partial
 import json
 import ee
+import io
 from rasterio.transform import xy, rowcol, from_origin
 from rasterio.enums import Resampling
 from dotenv import load_dotenv
@@ -633,8 +634,8 @@ def get_dynamic_world_mode(polygon,start_date="2020-12-01",end_date="2020-12-31"
     return os.path.join(temp_directory,filename)
     
 def main(data_path,start_date,end_date,scale=10,side=2560,class_name='Crop'):
-    gdf=gpd.read_file(data_path)
-    dataset_path=data_path.split(".geojson")[0]+"_dataset"
+    gdf = read_geojson_from_gcs(bucket_name, data_crop_mapping_path)
+    dataset_path=data_path.split(".geojson")[0]+"_dataset_"+f"{start_date}_{end_date}"
     os.makedirs(dataset_path,exist_ok=True)
     geoms=gdf.geometry
     gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i"))
@@ -652,23 +653,33 @@ def upload_to_gcs(source_file_path, destination_blob_name):
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_filename(source_file_path)
     print(f"Le fichier {source_file_path} a été téléchargé dans le bucket {bucket_name} avec le nom {destination_blob_name}")
+    # Fonction pour lire un fichier GeoJSON directement depuis Google Cloud Storage
+def read_geojson_from_gcs(bucket_name, source_blob_name):
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(source_blob_name)
+    geojson_bytes = blob.download_as_bytes()
+    return gpd.read_file(io.BytesIO(geojson_bytes))
 if __name__ == "__main__":
     load_dotenv()
     ee.Initialize()
     storage_client = storage.Client()
+    data_crop_mapping_path=os.getenv("DATA_CROP_MAPPING_PATH")
+    start_date=os.getenv("START_DATE")
+    end_date=os.getenv("END_DATE")
+    
 
-    centroids_path=os.getenv("CENTROIDS_PATH")
-    start_year=int(os.getenv("START_YEAR"))
-    end_year=int(os.getenv("END_YEAR"))
-    directory_path_input=os.getenv("TRAINING_DATA_PATH")
-    gedi_path_output=os.getenv("TARGET_TRAINING_DATA_PATH")
     scale=int(os.getenv("SCALE"))
     side=int(os.getenv("SIDE"))
     bucket_name=os.getenv("BUCKET")
     bucket_repository=os.getenv("BUCKET_REPOSITORY")
     bucket = storage_client.bucket(bucket_name)
 
-    main("../data/geometry/arachide_sample_4326.geojson","2024-07-01","2024-12-01")
+
+
+
+
+    main(data_crop_mapping_path,start_date,end_date)
+
 
     
    
