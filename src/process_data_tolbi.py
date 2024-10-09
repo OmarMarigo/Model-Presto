@@ -68,6 +68,7 @@ def read_and_chip(file_path, chip_size, output_dir):
         n_chips_y = src.height // chip_size
 
         chip_number = 0
+        print(f"data shape: {data.shape}")
         for i in range(n_chips_x):
             for j in range(n_chips_y):
                 x1, y1 = i * chip_size, j * chip_size

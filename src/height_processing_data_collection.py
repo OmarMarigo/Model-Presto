@@ -299,9 +299,15 @@ def apply_srtm(polygon,directory_path,filename,scale=10):
     # Adding all indices as bands to the image
     return image
 
+def get_centroid(polygon):
+    roi = ee.Geometry.Polygon(polygon)
+    centroid = roi.centroid()
+    return centroid
 
 
-def add_nicfi_monthly(i, polygon, year, month,directory_path,filename,scale=10):
+
+
+def add_nicfi_monthly( polygon, year, month,directory_path,filename,scale=10):
     roi=ee.Geometry.Polygon(polygon)
     # Load Planet NICFI mosaic for the given month and year
     nicfi = ee.ImageCollection('projects/planet-nicfi/assets/basemaps/africa') \
@@ -316,7 +322,7 @@ def add_nicfi_monthly(i, polygon, year, month,directory_path,filename,scale=10):
 
     # Scale the NICFI bands (they are typically in the range 0-10000)
     nicfi_scaled = nicfi_bands.divide(10000)
-    download_ee_image(nicfi_scaled,os.path.join(directory_path,filename), scale=10, region=roi, crs="EPSG:4326")
+    download_ee_image(nicfi_scaled,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
 
     # Add the scaled NICFI bands to the original image
     return nicfi_scaled

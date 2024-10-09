@@ -1,12 +1,11 @@
 import geopandas as gpd
 from ee import ImageCollection
 from pyproj import Proj, Transformer
-from shapely.geometry import Point,Polygon
+from shapely.geometry import Point
 from shapely.ops import transform
 from functools import partial
 import json
 import ee
-import io
 from rasterio.transform import xy, rowcol, from_origin
 from rasterio.enums import Resampling
 from dotenv import load_dotenv
@@ -21,23 +20,8 @@ import os
 import matplotlib.pyplot as plt
 import geemap
 from loguru import logger
-from rasterio.features import rasterize
-from google.cloud import storage
-CLASSES_CODES={'mil': 8,
-               'mais': 9,
-                 'mil+mais':10, 
-                 'arachide': 11,
-                   'oseille': 12, 
-                   'sorgho': 13,
-                     'pasteque': 14,
-                       'arachide+niebe': 15,
-                         'verger': 16,
-                           'niebe': 17,
-                             'mil+niebe': 18,
-                            'mil+sorgho': 19,
-                              'riz': 20,
-                            'arachide+mil': 21,
-                            'eau':22}
+
+
 def download_ee_image(
     image,
     filename,
@@ -232,6 +216,13 @@ def apply_gedi_month(polygon, year, month,directory_path, filename,scale=10):
     download_ee_image(image,os.path.join(directory_path,filename), scale=10, region=roi, crs="EPSG:4326")
     return image
 
+
+    
+
+    
+
+
+
 def get_S1_composite(polygon, start_date,end_date,directory_path, filename, scale=10):
     def create_default_image(roi, band_names):
         default_bands = [ee.Image.constant(-1).rename(band).clip(roi) for band in band_names]
@@ -250,14 +241,11 @@ def get_S1_composite(polygon, start_date,end_date,directory_path, filename, scal
     # Use a server-side condition to check if the collection is empty
     image = ee.Algorithms.If(
         sentinel1.size().gt(0),
-        sentinel1.median().set('system:time_start', ee.Date(end_date).millis()),
+        sentinel1.median().set('system:time_start', ee.Date.fromYMD(end_date).millis()),
         create_default_image(roi, ['VV', 'VH']).set('system:time_start',
-                                                             ee.Date(end_date).millis())
+                                                             ee.Date.fromYMD(end_date).millis())
     )
     download_ee_image(ee.Image(image),os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
-
-    blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
-    upload_to_gcs(os.path.join(directory_path,filename),blob_name)
 
     return ee.Image(image)
 
@@ -265,35 +253,32 @@ def get_S1_composite(polygon, start_date,end_date,directory_path, filename, scal
 
 def get_S2_composite(polygon, start_date,end_date,directory_path, filename,scale=10,cloud_pct=20):
     def create_default_image(roi, band_names):
-        default_bands = [ee.Image.constant(-1).rename(band) for band in band_names]
+        default_bands = [ee.Image.constant(-1).rename(band).clip(roi) for band in band_names]
         default_image = ee.Image.cat(default_bands)
         return default_image
     roi = ee.Geometry.Polygon(polygon)
-    bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10','B11', 'B12']
-
-    dataset = ee.ImageCollection('COPERNICUS/S2_HARMONIZED') \
+    dataset = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
         .filterBounds(roi) \
          .filter(ee.Filter.date(start_date, end_date)) \
-        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_pct))
+        .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_pct)).clip(roi)
     
+    bands = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10','B11', 'B12']
     
     def scale_bands(image):
-        scaled = image.select(bands[:-1]).divide(1)
+        scaled = image.select(bands[:-1]).divide(10000)
         return image.addBands(scaled, overwrite=True).select(bands)
 
 
 
     composite = ee.Algorithms.If(
         dataset.size().gt(0),
-        dataset.median().set('system:time_start', ee.Date(end_date).millis()),
-        create_default_image(roi, bands).set('system:time_start', ee.Date(end_date).millis())
+        dataset.median().set('system:time_start', start_date.millis()),
+        create_default_image(roi, bands).set('system:time_start', start_date.millis())
     )
 
     image = ee.Image(composite)
-    image=scale_bands(image)
     download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
-    blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
-    upload_to_gcs(os.path.join(directory_path,filename),blob_name)
+
     return image
 
 
@@ -302,7 +287,7 @@ def get_S2_composite(polygon, start_date,end_date,directory_path, filename,scale
 
 
 
-def get_srtm(polygon,directory_path,filename,scale=10):
+def apply_srtm(polygon,directory_path,filename,scale=10):
     # --- NDVI (Normalized Difference Vegetation Index) ---
     roi = ee.Geometry.Polygon(polygon)
     srtm = ee.Image("USGS/SRTMGL1_003").clip(roi)
@@ -314,15 +299,13 @@ def get_srtm(polygon,directory_path,filename,scale=10):
     aspect =ee.Terrain.aspect( srtm)
     image=elevation.addBands([slope, aspect])
     download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
-    blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
-    upload_to_gcs(os.path.join(directory_path,filename),blob_name)
     # Adding all indices as bands to the image
     return image
 
 def get_centroid(polygon):
-    roi = Polygon(polygon)
-
-    return roi.centroid
+    roi = ee.Geometry.Polygon(polygon)
+    centroid = roi.centroid()
+    return centroid
 
 
 
@@ -343,8 +326,7 @@ def get_nicfi_composite(polygon, start_date,end_date, directory_path,filename,sc
     # Scale the NICFI bands (they are typically in the range 0-10000)
     #nicfi_scaled = nicfi_bands.divide(10000)
     download_ee_image(nicfi_bands,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
-    blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
-    upload_to_gcs(os.path.join(directory_path,filename),blob_name)
+
     # Add the scaled NICFI bands to the original image
     return nicfi_bands
 
@@ -361,7 +343,7 @@ def get_landsat8_composite(polygon, start_date,end_date, directory_path, filenam
         .filterBounds(roi) \
         .filter(ee.Filter.date(start_date, end_date)) \
         .filter(ee.Filter.lt("CLOUD_COVER", cloud_pct))\
-        
+        .clip(roi)
 
 
 
@@ -370,14 +352,13 @@ def get_landsat8_composite(polygon, start_date,end_date, directory_path, filenam
     else:
         # Create a default image if no data is available
         band_names = ["SR_B1", "SR_B2", "SR_B3", "SR_B4", "SR_B5", "SR_B6", "SR_B7", "QA_PIXEL"]
-        default_bands = [ee.Image.constant(-1).rename(band) for band in band_names]
+        default_bands = [ee.Image.constant(-1).rename(band).clip(roi) for band in band_names]
         composite = ee.Image.cat(default_bands)
 
-    composite = composite.set('system:time_start', ee.Date(end_date).millis())
+    composite = composite.set('system:time_start', ee.Date.fromYMD(year, month, 1).millis())
 
     download_ee_image(composite, os.path.join(directory_path, filename), scale=scale, region=roi, crs="EPSG:4326")
-    blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
-    upload_to_gcs(os.path.join(directory_path,filename),blob_name)
+
     return composite
 
 
@@ -430,257 +411,91 @@ def generate_metadata(id, year, month, directory_path_input, directory_path_outp
 
 def dowload_for_one_polygon(id,polygon,start_date,end_date,directory_path_input,scale=10):
     os.makedirs(directory_path_input, exist_ok=True)
-   
-    
     try:
         get_S1_composite(polygon,start_date,end_date,directory_path_input,f"{id}_S1_composite.tif",scale=scale)
     except:
         print("no_sentinel1_data")
     try:
-        get_S2_composite(polygon,start_date,end_date,directory_path_input,f"{id}_S2_composite.tif",scale=scale)
+        get_S2_composite(polygon,start_date,end_date,directory_path_input,f"{id}_S2.tif",scale=scale)
     except:
         print("no_sentinel2_data")
     try:
-        get_nicfi_composite(polygon,start_date,end_date,directory_path_input,f"{id}_nicf8_composite.tif",scale=scale)
+        get_nicfi_composite(polygon,start_date,end_date,directory_path_input,f"{id}_nicfi.tif",scale=scale)
     except:
         print("no_nicfi_data")
     try:    
-        get_landsat8_composite(polygon,start_date,end_date,directory_path_input,f"{id}_LC8_composite.tif",scale=scale)
+        get_landsat8_composite(polygon,start_date,end_date,directory_path_input,f"{id}_LC8.tif",scale=scale)
     except:
         print("no_landsat8_data")
-    try:    
-        get_srtm(polygon,directory_path_input,f"{id}_srtm.tif",scale=scale)
-    except:
-        print("no_srtm")
-
-    
-
-
-    
     
     # Generate metadata after downloading all files
 
-def create_mask(raster_path,directory_path,filename,shapes,landcover_path):
- 
-    with rasterio.open(raster_path) as src:
-        raster = src.read(1)  # Lire la première bande du raster
-        out_meta = src.meta
-        raster_shape = raster.shape
-        print(raster_shape)
-      
-        mask = np.zeros(raster_shape, dtype=np.uint8)
-
-        # Rasterizer les polygones dans le masque
-        mask = rasterize(shapes=shapes, out_shape=raster_shape, fill=0, out=mask, transform=out_meta['transform'], dtype='uint8',)
-
-        # Sauvegarder le masque en tant que raster
-        with rasterio.open(landcover_path) as lc_src:
-            landcover = lc_src.read(1)
-            lc_meta = lc_src.meta
-
-            # Vérifier si les dimensions des rasters correspondent
-            if mask.shape != landcover.shape:
-                raise ValueError("Les dimensions du masque et du raster de classification ne correspondent pas")
-
-            # Créer une copie du masque pour le mettre à jour
-            updated_mask = np.copy(mask)
-            condition_landcover_zero = (landcover == 0)
-            landcover[condition_landcover_zero] = 22
-            # Mettre à jour le masque selon la condition 
-            condition = (mask == 0) & (landcover != 4)
-            updated_mask[condition] = landcover[condition]
-        
-        out_meta.update({"count": 1, "dtype": 'uint8','nodata':100})
-
-        with rasterio.open(os.path.join(directory_path,filename), "w", **out_meta) as dest:
-            dest.write(updated_mask, 1)
-        blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
-        upload_to_gcs(os.path.join(directory_path,filename),blob_name)
-
-        print(f"Le masque a été créé et sauvegardé dans {os.path.join(directory_path,filename)}")
-
-
-
-
+def create_mask(polygon,S2_img):
+    pass
     
-def dynamic_world(
-    region=None,
-    start_date="2020-01-01",
-    end_date="2021-01-01",
-    clip=False,
-    reducer=None,
-    projection="EPSG:3857",
-    scale=10,
-    return_type="hillshade",
-):
-    """Create 10-m land cover composite based on Dynamic World. The source code is adapted from the following tutorial by Spatial Thoughts:
-    https://developers.google.com/earth-engine/tutorials/community/introduction-to-dynamic-world-pt-1
 
-    Args:
-        region (ee.Geometry | ee.FeatureCollection): The region of interest.
-        start_date (str | ee.Date): The start date of the query. Default to "2020-01-01".
-        end_date (str | ee.Date): The end date of the query. Default to "2021-01-01".
-        clip (bool, optional): Whether to clip the image to the region. Default to False.
-        reducer (ee.Reducer, optional): The reducer to be used. Default to None.
-        projection (str, optional): The projection to be used for creating hillshade. Default to "EPSG:3857".
-        scale (int, optional): The scale to be used for creating hillshade. Default to 10.
-        return_type (str, optional): The type of image to be returned. Can be one of 'hillshade', 'visualize', 'class', or 'probability'. Default to "hillshade".
+def download_all_month_for_one_polygon(id_polygon,polygon,year,directory_path_input,gedi_path_output,scale=10):
+    os.makedirs(directory_path_input, exist_ok=True)
+    os.makedirs(gedi_path_output, exist_ok=True)
+    roi=ee.Geometry.Polygon(polygon)
+    def vqualityMask(im):
+        return im.updateMask(im.select('quality_flag').eq(1)).updateMask(im.select('degrade_flag').eq(0));
+   
+    dataset = ee.ImageCollection('LARSE/GEDI/GEDI02_A_002_MONTHLY').map(vqualityMask).select('rh98').filterDate(f"{year-1}-10-01",f"{year}-03-31");
+    # Select the height layer (assuming height data is under 'rh100' band, adjust if necessary)
+    gedi_image = dataset.median()
 
-    Returns:
-        ee.Image: The image with the specified return_type.
-    """
+    # Mask NoData values (e.g., assuming no-data values are represented by 0)
 
-    if return_type not in ["hillshade", "visualize", "class", "probability"]:
-        raise ValueError(
-            f"{return_type} must be one of 'hillshade', 'visualize', 'class', or 'probability'."
-        )
-
-    if reducer is None:
-        reducer = ee.Reducer.mode()
-
-    dw = ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1").filter(
-        ee.Filter.date(start_date, end_date)
+    # Reduce over the region to check for valid data
+    valid_pixel_count = gedi_image.reduceRegion(
+        reducer=ee.Reducer.count(),
+        geometry=roi,
+        scale=30,  # Adjust scale according to the resolution you need
+        maxPixels=1e13
     )
 
-    if isinstance(region, ee.FeatureCollection) or isinstance(region, ee.Geometry):
-        dw = dw.filterBounds(region)
-    else:
-        raise ValueError("region must be an ee.FeatureCollection or ee.Geometry.")
+    # Get the result
 
-    # Create a Mode Composite
-    classification = dw.select("label")
-    #dwComposite = classification.sort('system:time_start', False).first()
-    dwComposite = classification.mode()
-    if clip and (region is not None):
-        if isinstance(region, ee.Geometry):
-            dwComposite = dwComposite.clip(region)
-        elif isinstance(region, ee.FeatureCollection):
-            dwComposite = dwComposite.clipToCollection(region)
-        elif isinstance(region, ee.Feature):
-            dwComposite = dwComposite.clip(region.geometry())
-
-    dwVisParams = {
-        "min": 0,
-        "max": 8,
-        "palette": [
-            "#419BDF",
-            "#397D49",
-            "#88B053",
-            "#7A87C6",
-            "#E49635",
-            "#DFC35A",
-            "#C4281B",
-            "#A59B8F",
-            "#B39FE1",
-        ],
-    }
-
-    if return_type == "class":
-        return dwComposite
-    elif return_type == "visualize":
-        return dwComposite.visualize(**dwVisParams)
-    else:
-        # Create a Top-1 Probability Hillshade Visualization
-        probabilityBands = [
-            "water",
-            "trees",
-            "grass",
-            "flooded_vegetation",
-            "crops",
-            "shrub_and_scrub",
-            "built",
-            "bare",
-            "snow_and_ice",
-        ]
-
-        # Select probability bands
-        probabilityCol = dw.select(probabilityBands)
-
-        # Create a multi-band image with the average pixel-wise probability
-        # for each band across the time-period
-        meanProbability = probabilityCol.reduce(ee.Reducer.mean())
-
-        # Composites have a default projection that is not suitable
-        # for hillshade computation.
-        # Set a EPSG:3857 projection with 10m scale
-        proj = ee.Projection(projection).atScale(scale)
-        meanProbability = meanProbability.setDefaultProjection(proj)
-
-        # Create the Top1 Probability Hillshade
-        top1Probability = meanProbability.reduce(ee.Reducer.max())
-
-        if clip and (region is not None):
-            if isinstance(region, ee.Geometry):
-                top1Probability = top1Probability.clip(region)
-            elif isinstance(region, ee.FeatureCollection):
-                top1Probability = top1Probability.clipToCollection(region)
-            elif isinstance(region, ee.Feature):
-                top1Probability = top1Probability.clip(region.geometry())
-
-        if return_type == "probability":
-            return top1Probability
-        else:
-            top1Confidence = top1Probability.multiply(100).int()
-            hillshade = ee.Terrain.hillshade(top1Confidence).divide(255)
-            rgbImage = dwComposite.visualize(**dwVisParams).divide(255)
-            probabilityHillshade = rgbImage.multiply(hillshade)
-
-            return probabilityHillshade
-
-def get_dynamic_world_mode(polygon,start_date="2020-12-01",end_date="2020-12-31",temp_directory="../data/temp",filename="dw.tif",scale=10):
-    os.makedirs(temp_directory,exist_ok=True)
-    region = ee.Geometry.Polygon(polygon)    
-    image = dynamic_world(region, start_date, end_date,projection="EPSG:4326",return_type="class").clip(region)
-    download_ee_image(image,os.path.join(temp_directory,filename), scale=scale, region=region, crs="EPSG:4326")
-    blob_name=os.path.join(bucket_repository,temp_directory.split("/")[-1],filename)
-    upload_to_gcs(os.path.join(temp_directory,filename),blob_name)
-    return os.path.join(temp_directory,filename)
-    
-def main(data_path,start_date,end_date,scale=10,side=2560):
-    gdf = read_geojson_from_gcs(bucket_name, data_crop_mapping_path)
-    dataset_name=data_path.split("/")[-1].split(".geojson")[0]+"_dataset_"+f"{start_date}_{end_date}" 
-    dataset_path=os.path.join(base_dir_dataset_path,dataset_name)
-    os.makedirs(dataset_path,exist_ok=True)
-    geoms=gdf.geometry
-    gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i"))
-    gdf['label'] = gdf[class_name].map(CLASSES_CODES) 
-    shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf["label"])]
-    for i,geom in enumerate(geoms):
-        centroid=geom.centroid
-        polygon=centroid_to_square(centroid,side=side)
-        dowload_for_one_polygon(i,polygon,start_date,end_date,dataset_path,scale)
-        filename_dw=get_dynamic_world_mode(polygon,start_date,end_date,dataset_path,'{}_dynamic_world.tif'.format(i),scale)
-        create_mask(os.path.join(dataset_path,'{}_S1_composite.tif'.format(i)),dataset_path,'{}_label.tif'.format(i),shapes,filename_dw)
+    valid_pixel_count_value = valid_pixel_count.getInfo()
   
-def upload_to_gcs(source_file_path, destination_blob_name):
+
+    # Check if there are any valid pixels
     
-    blob = bucket.blob(destination_blob_name)
-    blob.upload_from_filename(source_file_path)
-    print(f"Le fichier {source_file_path} a été téléchargé dans le bucket {bucket_name} avec le nom {destination_blob_name}")
-    # Fonction pour lire un fichier GeoJSON directement depuis Google Cloud Storage
-def read_geojson_from_gcs(bucket_name, source_blob_name):
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    geojson_bytes = blob.download_as_bytes()
-    return gpd.read_file(io.BytesIO(geojson_bytes))
+    if valid_pixel_count_value['rh98'] > 0:
+        for month in range(1, 13):
+            dowload_one_polygon_for_one_month(id_polygon,polygon,year-1,month,directory_path_input,scale=scale)
+        apply_srtm(polygon,directory_path_input,f"{id_polygon}_srtm.tif",scale=scale)
+        download_ee_image(gedi_image,os.path.join(gedi_path_output,f"{id_polygon}_gedi_{year}_01.tif"), scale=10, region=roi, crs="EPSG:4326")
+    else:
+        pass
+
+
+def generate_data_for_one_polygon(feature,start_year,end_year,directory_path_input,gedi_path_output,scale=10,side=2560):
+    for year in range(start_year,end_year+1):
+        id_polygon=feature['properties']['id']
+        logger.success(f"Processing polygon {id_polygon} for year {year}")
+        polygon=centroid_to_square(feature['geometry']['coordinates'],side)
+
+        download_all_month_for_one_polygon(id_polygon,polygon,year,directory_path_input,gedi_path_output,scale=scale)
+
+def main(centroids_path,start_year,end_year,directory_path_input,gedi_path_output,scale=10,side=2560):
+    data=json.load(open(centroids_path) )
+    features=data['features']
+    for feat in features:
+        generate_data_for_one_polygon(feat,start_year,end_year,directory_path_input,gedi_path_output,scale=scale,side=side)
+
+
 if __name__ == "__main__":
     load_dotenv()
     ee.Initialize()
-    storage_client = storage.Client()
-    data_crop_mapping_path=os.getenv("DATA_CROP_MAPPING_PATH")
-    start_date=os.getenv("START_DATE")
-    end_date=os.getenv("END_DATE")
+    centroids_path=os.getenv("CENTROIDS_PATH")
+    start_year=int(os.getenv("START_YEAR"))
+    end_year=int(os.getenv("END_YEAR"))
+    directory_path_input=os.getenv("TRAINING_DATA_PATH")
+    gedi_path_output=os.getenv("TARGET_TRAINING_DATA_PATH")
     scale=int(os.getenv("SCALE"))
     side=int(os.getenv("SIDE"))
-    bucket_name=os.getenv("BUCKET")
-    bucket_repository=os.getenv("BUCKET_REPOSITORY")
-    bucket = storage_client.bucket(bucket_name)
-    base_dir_dataset_path=os.getenv("BASE_DIR_DATASET_PATH")
-    class_name=os.getenv("CLASS_NAME")
-    os.makedirs(base_dir_dataset_path,exist_ok=True)
-
-    main(data_crop_mapping_path,start_date,end_date)
-
-
-    
+    print(centroids_path,start_year,end_year,directory_path_input,gedi_path_output,scale,side)
+    main(centroids_path,start_year,end_year,directory_path_input,gedi_path_output,scale=scale,side=side)
    
