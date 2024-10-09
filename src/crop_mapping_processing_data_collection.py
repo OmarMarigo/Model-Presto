@@ -650,7 +650,7 @@ def main(data_path,start_date,end_date,scale=10,side=2560):
         polygon=centroid_to_square(centroid,side=side)
         dowload_for_one_polygon(i,polygon,start_date,end_date,dataset_path,scale)
         filename_dw=get_dynamic_world_mode(polygon,start_date,end_date,dataset_path,'{}_dynamic_world.tif'.format(i),scale)
-        create_mask(os.path.join(dataset_path,'{}_S1_composite.tif'.format(i)),dataset_path,'{}_label.tif'.format(i),shapes,filename_dw)
+        create_mask(os.path.join(dataset_path,'{}_S2_composite.tif'.format(i)),dataset_path,'{}_label.tif'.format(i),shapes,filename_dw)
   
 def upload_to_gcs(source_file_path, destination_blob_name):
     
@@ -679,7 +679,7 @@ if __name__ == "__main__":
     class_name=os.getenv("CLASS_NAME")
     os.makedirs(base_dir_dataset_path,exist_ok=True)
 
-    main(data_crop_mapping_path,start_date,end_date)
+    main(data_crop_mapping_path,start_date,end_date,scale=scale,side=side)
 
 
     

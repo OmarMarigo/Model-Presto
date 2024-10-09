@@ -13,6 +13,8 @@ band_sums = {band: 0 for band in ALL_BANDS_S2_L1C}
 band_counts = {band: 0 for band in ALL_BANDS_S2_L1C}
 band_sums_squared = {band: 0 for band in ALL_BANDS_S2_L1C}
 
+
+exit()
 # Parcourir chaque fichier dans le dossier
 for filename in os.listdir(input_directory):
     if filename.endswith("S2_composite.tif"):
