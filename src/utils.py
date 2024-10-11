@@ -3,7 +3,7 @@ import rasterio
 import numpy as np
 
 # Dossier contenant vos fichiers TIF
-input_directory = "/Users/mac/Desktop/docko/tolbi-next-gen/preprocessing-geospatial-data/data/arachide_sample_4326_dataset_2024-07-01_2024-12-01"
+input_directory = "/Users/mac/Desktop/docko/tolbi-next-gen/preprocessing-geospatial-data/data/cartagraphie_des_cultures_dataset_2024-07-01_2024-12-01"
 
 # Liste des bandes Sentinel-2 L1C
 ALL_BANDS_S2_L1C = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10', 'B11', 'B12']
@@ -14,7 +14,7 @@ band_counts = {band: 0 for band in ALL_BANDS_S2_L1C}
 band_sums_squared = {band: 0 for band in ALL_BANDS_S2_L1C}
 
 
-exit()
+
 # Parcourir chaque fichier dans le dossier
 for filename in os.listdir(input_directory):
     if filename.endswith("S2_composite.tif"):
@@ -57,8 +57,11 @@ print("Écart-type moyen par bande:", band_stds)
 
 # Calculer et afficher l'écart-type des moyennes
 mean_values = [value for value in band_means.values() if value is not None]
+print(f"mean des moyennes: {mean_values}")
 if mean_values:
     mean_std = np.std(mean_values)
-    print(f"Écart-type des moyennes: {mean_std:.4f}")
+    print(f"Écart-type des moyennes: {mean_std}")
 else:
     print("Écart-type des moyennes: No valid data")
+
+

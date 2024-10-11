@@ -642,6 +642,8 @@ def main(data_path,start_date,end_date,scale=10,side=2560):
     dataset_path=os.path.join(base_dir_dataset_path,dataset_name)
     os.makedirs(dataset_path,exist_ok=True)
     geoms=gdf.geometry
+    gdf = gdf.dropna(subset=[class_name])
+
     gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i"))
     gdf['label'] = gdf[class_name].map(CLASSES_CODES) 
     shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf["label"])]
