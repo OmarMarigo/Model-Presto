@@ -23,21 +23,11 @@ import geemap
 from loguru import logger
 from rasterio.features import rasterize
 from google.cloud import storage
-CLASSES_CODES={'mil': 8,
-               'mais': 9,
-                 'mil+mais':10, 
-                 'arachide': 11,
-                   'oseille': 12, 
-                   'sorgho': 13,
-                     'pasteque': 14,
-                       'arachide+niebe': 15,
-                         'verger': 16,
-                           'niebe': 17,
-                             'mil+niebe': 18,
-                            'mil+sorgho': 19,
-                              'riz': 20,
-                            'arachide+mil': 21,
-                            'eau':22}
+from datetime import datetime, timedelta
+CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
+                'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mil+mais': 19, 'mil+niebe': 20,
+                  'mil+sorgho': 21, 'arachide+mil': 22,"autre":23}
+
 def download_ee_image(
     image,
     filename,
@@ -248,12 +238,13 @@ def get_S1_composite(polygon, start_date,end_date,directory_path, filename, scal
         .filter(ee.Filter.eq('instrumentMode', 'IW')).select(['VV', 'VH'])
 
     # Use a server-side condition to check if the collection is empty
-    image = ee.Algorithms.If(
-        sentinel1.size().gt(0),
-        sentinel1.median().set('system:time_start', ee.Date(end_date).millis()),
-        create_default_image(roi, ['VV', 'VH']).set('system:time_start',
-                                                             ee.Date(end_date).millis())
-    )
+    # image = ee.Algorithms.If(
+    #     sentinel1.size().gt(0),
+    #     sentinel1.median().set('system:time_start', ee.Date(end_date).millis()),
+    #     create_default_image(roi, ['VV', 'VH']).set('system:time_start',
+    #                                                          ee.Date(end_date).millis())
+    # )
+    image=sentinel1.median().set('system:time_start', ee.Date(end_date).millis())
     download_ee_image(ee.Image(image),os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
 
     blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
@@ -289,7 +280,7 @@ def get_S2_composite(polygon, start_date,end_date,directory_path, filename,scale
         create_default_image(roi, bands).set('system:time_start', ee.Date(end_date).millis())
     )
 
-    image = ee.Image(composite)
+    image = ee.Image(dataset.median()).set('system:time_start', ee.Date(end_date).millis()) 
     image=scale_bands(image)
     download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
     blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
@@ -298,6 +289,30 @@ def get_S2_composite(polygon, start_date,end_date,directory_path, filename,scale
 
 
 
+def get_hls_composite(polygon, start_date,end_date,directory_path, filename,scale=10,cloud_pct=20):
+
+    roi = ee.Geometry.Polygon(polygon)
+    bands = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7']
+    dataset= ee.ImageCollection("NASA/HLS/HLSL30/v002")\
+                .filter(ee.Filter.date(start_date, end_date)) \
+                    .filter(ee.Filter.lt('CLOUD_COVERAGE', cloud_pct))
+   
+    
+    
+    def scale_bands(image):
+        scaled = image.select(bands[:-1]).divide(1)
+        return image.addBands(scaled, overwrite=True).select(bands)
+
+
+
+    
+
+    image = ee.Image(dataset.median()).set('system:time_start', ee.Date(end_date).millis()) 
+    image=scale_bands(image)
+    download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
+    blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
+    upload_to_gcs(os.path.join(directory_path,filename),blob_name)
+    return image
 
 
 
@@ -430,28 +445,26 @@ def generate_metadata(id, year, month, directory_path_input, directory_path_outp
 
 def dowload_for_one_polygon(id,polygon,start_date,end_date,directory_path_input,scale=10):
     os.makedirs(directory_path_input, exist_ok=True)
+    
    
     
     try:
-        get_S1_composite(polygon,start_date,end_date,directory_path_input,f"{id}_S1_composite.tif",scale=scale)
+        get_S1_composite(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),directory_path_input,f"{id}_S1_{start_date.year}_{start_date.month}.tif",scale=scale)
     except:
         print("no_sentinel1_data")
     try:
-        get_S2_composite(polygon,start_date,end_date,directory_path_input,f"{id}_S2_composite.tif",scale=scale)
+        get_S2_composite(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),directory_path_input,f"{id}_S2_{start_date.year}_{start_date.month}.tif",scale=scale)
     except:
         print("no_sentinel2_data")
-    try:
-        get_nicfi_composite(polygon,start_date,end_date,directory_path_input,f"{id}_nicf8_composite.tif",scale=scale)
-    except:
-        print("no_nicfi_data")
-    try:    
-        get_landsat8_composite(polygon,start_date,end_date,directory_path_input,f"{id}_LC8_composite.tif",scale=scale)
-    except:
-        print("no_landsat8_data")
-    try:    
-        get_srtm(polygon,directory_path_input,f"{id}_srtm.tif",scale=scale)
-    except:
-        print("no_srtm")
+    # try:
+    #     get_nicfi_composite(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),directory_path_input,f"{id}_nicf8_{start_date.year}_{start_date.month}.tif",scale=scale)
+    # except:
+    #     print("no_nicfi_data")
+    # try:    
+    #     get_landsat8_composite(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),directory_path_input,f"{id}_LC8_{start_date.year}_{start_date.month}.tif",scale=scale)
+    # except:
+    #     print("no_landsat8_data")
+
 
     
 
@@ -467,11 +480,9 @@ def create_mask(raster_path,directory_path,filename,shapes,landcover_path):
         out_meta = src.meta
         raster_shape = raster.shape
         print(raster_shape)
-      
-        mask = np.zeros(raster_shape, dtype=np.uint8)
-
         # Rasterizer les polygones dans le masque
-        mask = rasterize(shapes=shapes, out_shape=raster_shape, fill=0, out=mask, transform=out_meta['transform'], dtype='uint8',)
+        #mask = np.zeros(raster_shape, dtype='uint8')-1
+        mask = rasterize(shapes=shapes, out_shape=raster_shape, fill=0, transform=out_meta['transform'], dtype='uint8')
 
         # Sauvegarder le masque en tant que raster
         with rasterio.open(landcover_path) as lc_src:
@@ -484,13 +495,13 @@ def create_mask(raster_path,directory_path,filename,shapes,landcover_path):
 
             # Créer une copie du masque pour le mettre à jour
             updated_mask = np.copy(mask)
-            condition_landcover_zero = (landcover == 0)
-            landcover[condition_landcover_zero] = 22
+            condition_landcover_zero = (landcover == 0) 
+            landcover[condition_landcover_zero] = 9 # water is class 9
             # Mettre à jour le masque selon la condition 
-            condition = (mask == 0) & (landcover != 4)
+            condition = (mask == 0) & (landcover != 4) # dont update the class crop (4)  where we don't have the crops it will becomes no data (0)
             updated_mask[condition] = landcover[condition]
         
-        out_meta.update({"count": 1, "dtype": 'uint8','nodata':100})
+        out_meta.update({"count": 1, "dtype": 'uint8','nodata':0})
 
         with rasterio.open(os.path.join(directory_path,filename), "w", **out_meta) as dest:
             dest.write(updated_mask, 1)
@@ -636,23 +647,52 @@ def get_dynamic_world_mode(polygon,start_date="2020-12-01",end_date="2020-12-31"
     upload_to_gcs(os.path.join(temp_directory,filename),blob_name)
     return os.path.join(temp_directory,filename)
     
-def main(data_path,start_date,end_date,scale=10,side=2560):
+def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id_record",dataset_name_suffix="monthly"):
     gdf = read_geojson_from_gcs(bucket_name, data_crop_mapping_path)
-    dataset_name=data_path.split("/")[-1].split(".geojson")[0]+"_dataset_"+f"{start_date}_{end_date}" 
+    dataset_name=data_path.split("/")[-1].split(".geojson")[0]+"_dataset_"+f"{str_start_date}_{str_end_date}_{dataset_name_suffix}" 
     dataset_path=os.path.join(base_dir_dataset_path,dataset_name)
     os.makedirs(dataset_path,exist_ok=True)
-    geoms=gdf.geometry
     gdf = gdf.dropna(subset=[class_name])
-
+    geoms=gdf.geometry
+    try:
+        ids=list(gdf[id_column])
+    except:
+        raise ValueError ("id_column not found in the dataset")
     gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i"))
     gdf['label'] = gdf[class_name].map(CLASSES_CODES) 
+
     shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf["label"])]
     for i,geom in enumerate(geoms):
-        centroid=geom.centroid
-        polygon=centroid_to_square(centroid,side=side)
-        dowload_for_one_polygon(i,polygon,start_date,end_date,dataset_path,scale)
-        filename_dw=get_dynamic_world_mode(polygon,start_date,end_date,dataset_path,'{}_dynamic_world.tif'.format(i),scale)
-        create_mask(os.path.join(dataset_path,'{}_S2_composite.tif'.format(i)),dataset_path,'{}_label.tif'.format(i),shapes,filename_dw)
+       
+        id = ids[i]
+    
+        logger.success(f"processing polygon id  {id}: progression {i+1}/{len(geoms)}")
+        if side!=0:
+
+            centroid=geom.centroid
+            polygon=centroid_to_square(centroid,side=side)
+        else:
+            polygon=list(geom.exterior.coords)
+
+        start_date = datetime.strptime(str_start_date, "%Y-%m-%d")
+        end_date = datetime.strptime(str_end_date, "%Y-%m-%d")
+
+
+        while start_date < end_date:
+            if start_date.month == 12:
+                next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
+            else:
+                next_month = start_date.replace(month=start_date.month + 1, day=1)
+            end_of_month = next_month - timedelta(days=1)
+            if end_of_month > end_date:
+                end_of_month = end_date
+           
+            dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
+            filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
+            start_date = next_month
+
+        get_srtm(polygon,dataset_path,f"{id}_srtm.tif",scale=scale)
+        create_mask(os.path.join(dataset_path,f"{id}_S1_{start_date.year}_{start_date.month-1}.tif"),dataset_path,'{}_label.tif'.format(id),shapes,filename_dw)
   
 def upload_to_gcs(source_file_path, destination_blob_name):
     
@@ -666,6 +706,8 @@ def read_geojson_from_gcs(bucket_name, source_blob_name):
     geojson_bytes = blob.download_as_bytes()
     return gpd.read_file(io.BytesIO(geojson_bytes))
 if __name__ == "__main__":
+
+
     load_dotenv()
     ee.Initialize()
     storage_client = storage.Client()
@@ -679,9 +721,11 @@ if __name__ == "__main__":
     bucket = storage_client.bucket(bucket_name)
     base_dir_dataset_path=os.getenv("BASE_DIR_DATASET_PATH")
     class_name=os.getenv("CLASS_NAME")
+    id_column=os.getenv("ID_COLUMN")
+    dataset_name_suffix=os.getenv("DATASET_NAME_SUFFIX")
     os.makedirs(base_dir_dataset_path,exist_ok=True)
 
-    main(data_crop_mapping_path,start_date,end_date,scale=scale,side=side)
+    main(data_crop_mapping_path,start_date,end_date,scale=scale,side=side,id_column=id_column,dataset_name_suffix=dataset_name_suffix)
 
 
     

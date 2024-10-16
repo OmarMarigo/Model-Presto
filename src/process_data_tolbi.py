@@ -63,6 +63,7 @@ def read_and_chip(file_path, chip_size, output_dir):
 
     with rio.open(file_path) as src:
         data = src.read()
+        
 
         n_chips_x = src.width // chip_size
         n_chips_y = src.height // chip_size
@@ -124,3 +125,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
