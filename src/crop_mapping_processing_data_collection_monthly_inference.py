@@ -648,21 +648,18 @@ def get_dynamic_world_mode(polygon,start_date="2020-12-01",end_date="2020-12-31"
     return os.path.join(temp_directory,filename)
     
 def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id_record",dataset_name_suffix="monthly"):
-    #gdf = read_geojson_from_gcs(bucket_name, data_crop_mapping_path)
-    gdf = gpd.read_file(data_path)
+    gdf = read_geojson_from_gcs(bucket_name, data_path)
+
     dataset_name=data_path.split("/")[-1].split(".geojson")[0]+"_dataset_"+f"{str_start_date}_{str_end_date}_{dataset_name_suffix}" 
     dataset_path=os.path.join(base_dir_dataset_path,dataset_name)
     os.makedirs(dataset_path,exist_ok=True)
-    #gdf = gdf.dropna(subset=[class_name])
+    gdf = gdf.dropna(subset=['geometry'])
     geoms=gdf.geometry
     try:
         ids=list(gdf[id_column])
     except:
         raise ValueError ("id_column not found in the dataset")
-    #gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i"))
-    #gdf['label'] = gdf[class_name].map(CLASSES_CODES) 
-
-    #shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf["label"])]
+ 
     for i,geom in enumerate(geoms):
        
         id = ids[i]
@@ -710,22 +707,21 @@ if __name__ == "__main__":
     load_dotenv()
     ee.Initialize()
     storage_client = storage.Client()
-    data_crop_mapping_path=os.getenv("DATA_CROP_MAPPING_PATH")
+    data_crop_mapping_path_inference=os.getenv("DATA_CROP_MAPPING_PATH_INFERENCE")
     start_date=os.getenv("START_DATE")
     end_date=os.getenv("END_DATE")
     scale=int(os.getenv("SCALE"))
 
-    #side=int(os.getenv("SIDE"))
+    side=int(os.getenv("SIDE"))
     bucket_name=os.getenv("BUCKET")
     bucket_repository=os.getenv("BUCKET_REPOSITORY")
     bucket = storage_client.bucket(bucket_name)
     base_dir_dataset_path=os.getenv("BASE_DIR_DATASET_PATH")
     class_name=os.getenv("CLASS_NAME")
-    id_column=os.getenv("ID_COLUMN")
-    dataset_name_suffix=os.getenv("DATASET_NAME_SUFFIX")
+    id_column_inference=os.getenv("ID_COLUMN_INFERENCE")    
+    dataset_name_suffix_inference=os.getenv("DATASET_NAME_SUFFIX_INFERENCE")
     os.makedirs(base_dir_dataset_path,exist_ok=True)
-    data_crop_mapping_path="/Users/maika/Desktop/preprocessing-geospatial-data/data/to_predict_2023.geojson"
-    main(data_crop_mapping_path,start_date,end_date,scale=scale,side=0,id_column="id",dataset_name_suffix="inference")
+    main(data_crop_mapping_path_inference,start_date,end_date,scale=scale,side=side,id_column=id_column_inference,dataset_name_suffix=dataset_name_suffix_inference)
 
 
     
