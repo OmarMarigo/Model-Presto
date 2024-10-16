@@ -26,7 +26,8 @@ from google.cloud import storage
 from datetime import datetime, timedelta
 CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
                 'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mil+mais': 19, 'mil+niebe': 20,
-                  'mil+sorgho': 21, 'arachide+mil': 22,"autre":23}
+                  'mil+sorgho': 21, 'arachide+mil': 22,"autre":23,"arachide+oseille":24,"arachide+riz":25,"niebe+autre":26,"arachide+mais":27,"arachide+autre":28}
+
 
 def download_ee_image(
     image,
@@ -482,7 +483,7 @@ def create_mask(raster_path,directory_path,filename,shapes,landcover_path):
         print(raster_shape)
         # Rasterizer les polygones dans le masque
         #mask = np.zeros(raster_shape, dtype='uint8')-1
-        mask = rasterize(shapes=shapes, out_shape=raster_shape, fill=0, transform=out_meta['transform'], dtype='uint8')
+        mask = rasterize(shapes=shapes, out_shape=raster_shape, fill=0, transform=out_meta['transform'], dtype='int16')
 
         # Sauvegarder le masque en tant que raster
         with rasterio.open(landcover_path) as lc_src:
@@ -653,13 +654,22 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
     dataset_path=os.path.join(base_dir_dataset_path,dataset_name)
     os.makedirs(dataset_path,exist_ok=True)
     gdf = gdf.dropna(subset=[class_name])
+    gdf = gdf.dropna(subset=['geometry'])
+    gdf = gdf[gdf[class_name] != ""]
+    gdf = gdf[gdf[class_name] != 'arachide+oseille, arachide+niébé']
     geoms=gdf.geometry
     try:
         ids=list(gdf[id_column])
     except:
         raise ValueError ("id_column not found in the dataset")
-    gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i"))
+    gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i").replace(", ","+"))
     gdf['label'] = gdf[class_name].map(CLASSES_CODES) 
+    print(gdf[class_name].unique())
+    print(len(gdf[class_name].unique()))
+    for class_ in gdf[class_name].unique():
+        logger.error(f"class: {class_}")
+    print(gdf['label'].unique())
+    
 
     shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf["label"])]
     for i,geom in enumerate(geoms):
