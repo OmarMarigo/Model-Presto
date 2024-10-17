@@ -655,16 +655,17 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
     os.makedirs(dataset_path,exist_ok=True)
     gdf = gdf.dropna(subset=['geometry'])
     geoms=gdf.geometry
-    try:
-        ids=list(gdf[id_column])
-    except:
-        raise ValueError ("id_column not found in the dataset")
+    # try:
+    #     ids=list(gdf[id_column])
+    # except:
+    #     raise ValueError ("id_column not found in the dataset")
  
     for i,geom in enumerate(geoms):
-        if i < 833:
-            continue
+        # if i < 833:
+        #     continue
        
-        id = ids[i]
+        #id = ids[i]
+        id = i
     
         logger.success(f"processing polygon id  {id}: progression {i+1}/{len(geoms)}")
         if side!=0:
