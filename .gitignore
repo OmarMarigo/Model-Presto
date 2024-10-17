@@ -4,3 +4,5 @@ gedi_output.nc/
 .DS_Store
 .vscode/
 .idea/
+.env/
+.env
