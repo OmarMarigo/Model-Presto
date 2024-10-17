@@ -661,6 +661,8 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
         raise ValueError ("id_column not found in the dataset")
  
     for i,geom in enumerate(geoms):
+        if i < 833:
+            continue
        
         id = ids[i]
     
