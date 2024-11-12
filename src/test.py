@@ -3,6 +3,51 @@ import geopandas as gpd
 from rasterio.features import rasterize
 import numpy as np
 from matplotlib import pyplot as plt
+
+import rasterio
+from rasterio.enums import Resampling
+import numpy as np
+
+def resample_raster(input_path, output_path, new_height, new_width):
+    with rasterio.open(input_path) as dataset:
+        # Read the data
+        data = dataset.read(
+            out_shape=(
+                dataset.count,
+                new_height,
+                new_width
+            ),
+            resampling=Resampling.bilinear
+        )
+        
+        # Scale image transform
+        transform = dataset.transform * dataset.transform.scale(
+            (dataset.height / new_height),
+            (dataset.width / new_width)
+        )
+        
+        # Update metadata
+        metadata = dataset.meta.copy()
+        metadata.update({
+            'height': new_height,
+            'width': new_width,
+            'transform': transform
+        })
+        
+        # Write the resampled data to a new file
+        with rasterio.open(output_path, 'w', **metadata) as resampled_dataset:
+            resampled_dataset.write(data)
+
+# Example usage
+input_path = "srtm.tif"
+output_path = "resampled_srtm.tif"
+new_height = 24*9  # Desired height
+new_width = 24*9  # Desired width
+
+resample_raster(input_path, output_path, new_height, new_width)
+print(rasterio.open(input_path).read(1))
+print(rasterio.open(output_path).read(1))
+exit()
 polygons_path = "/Users/maika/Desktop/preprocessing-geospatial-data/data/geometry/Cartagraphie des cultures.geojson"
 gdf = gpd.read_file(polygons_path)
 

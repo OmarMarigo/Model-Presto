@@ -35,7 +35,7 @@ def download_ee_image(
     crs=None,
     crs_transform=None,
     scale=None,
-    resampling="near",
+    resampling="bilinear",
     dtype=None,
     overwrite=True,
     num_threads=None,
@@ -131,7 +131,7 @@ def download_ee_image(
 
     img=gd.download.BaseImage(image)
 
- 
+
     img.download(filename, overwrite=overwrite, num_threads=num_threads, **kwargs)
 def centroid_to_square(centroid, side=2560):
 
@@ -320,17 +320,18 @@ def get_hls_composite(polygon, start_date,end_date,directory_path, filename,scal
 def get_srtm(polygon,directory_path,filename,scale=10):
     # --- NDVI (Normalized Difference Vegetation Index) ---
     roi = ee.Geometry.Polygon(polygon)
-    srtm = ee.Image("USGS/SRTMGL1_003").clip(roi)
+    srtm = ee.Image("CGIAR/SRTM90_V4").clip(roi)
     # --- Elevation ,Slope and Aspect ---
     elevation = srtm.select('elevation').rename('elevation')
-
-    slope = ee.Terrain.slope(srtm).rename('slope')
-
-    aspect =ee.Terrain.aspect( srtm)
+    slope = ee.Terrain.slope(elevation).rename('slope')
+    aspect =ee.Terrain.aspect( elevation)
     image=elevation.addBands([slope, aspect])
+    # elevation = elevation.updateMask(elevation.neq(-9999))
+    # slope = slope.updateMask(slope.neq(-9999))
+    # aspect = aspect.updateMask(aspect.neq(-9999))
     download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
-    blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
-    upload_to_gcs(os.path.join(directory_path,filename),blob_name)
+    #blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
+    #upload_to_gcs(os.path.join(directory_path,filename),blob_name)
     # Adding all indices as bands to the image
     return image
 
@@ -710,11 +711,12 @@ if __name__ == "__main__":
     load_dotenv()
     ee.Initialize()
     storage_client = storage.Client()
+
+
     data_crop_mapping_path_inference=os.getenv("DATA_CROP_MAPPING_PATH_INFERENCE")
     start_date=os.getenv("START_DATE")
     end_date=os.getenv("END_DATE")
     scale=int(os.getenv("SCALE"))
-
     side=int(os.getenv("SIDE"))
     bucket_name=os.getenv("BUCKET")
     bucket_repository=os.getenv("BUCKET_REPOSITORY")

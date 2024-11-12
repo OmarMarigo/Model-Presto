@@ -25,8 +25,8 @@ from rasterio.features import rasterize
 from google.cloud import storage
 from datetime import datetime, timedelta
 CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
-                'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mil+mais': 19, 'mil+niebe': 20,
-                  'mil+sorgho': 21, 'arachide+mil': 22,"autre":23,"arachide+oseille":24,"arachide+riz":25,"niebe+autre":26,"arachide+mais":27,"arachide+autre":28}
+                'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mais+mil': 19,'mil+mais': 19,'mil+niebe': 20,
+                  'mil+sorgho': 21, 'arachide+mil': 22,'mil+arachide': 22,"autre":23,"arachide+oseille":24,"arachide+riz":25,"niebe+autre":26,"arachide+mais":27,"arachide+autre":28,"arachide+sorgho":29,"herbres":30}
 
 
 def download_ee_image(
@@ -246,7 +246,7 @@ def get_S1_composite(polygon, start_date,end_date,directory_path, filename, scal
     #                                                          ee.Date(end_date).millis())
     # )
     image=sentinel1.median().set('system:time_start', ee.Date(end_date).millis())
-    download_ee_image(ee.Image(image),os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
+    download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
 
     blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
     upload_to_gcs(os.path.join(directory_path,filename),blob_name)
@@ -281,7 +281,7 @@ def get_S2_composite(polygon, start_date,end_date,directory_path, filename,scale
         create_default_image(roi, bands).set('system:time_start', ee.Date(end_date).millis())
     )
 
-    image = ee.Image(dataset.median()).set('system:time_start', ee.Date(end_date).millis()) 
+    image = dataset.median().set('system:time_start', ee.Date(end_date).millis()) 
     image=scale_bands(image)
     download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
     blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
@@ -318,18 +318,24 @@ def get_hls_composite(polygon, start_date,end_date,directory_path, filename,scal
 
 
 
-def get_srtm(polygon,directory_path,filename,scale=10):
+def get_srtm(polygon,directory_path,filename,scale=10,resampling="bilinear"):
     # --- NDVI (Normalized Difference Vegetation Index) ---
     roi = ee.Geometry.Polygon(polygon)
-    srtm = ee.Image("USGS/SRTMGL1_003").clip(roi)
+    srtm = ee.Image("CGIAR/SRTM90_V4").clip(roi)
     # --- Elevation ,Slope and Aspect ---
-    elevation = srtm.select('elevation').rename('elevation')
+    elevation = srtm.select('elevation').rename('elevation').resample(resampling).reproject(
+        crs='EPSG:4326',
+        scale=10
+    )
 
-    slope = ee.Terrain.slope(srtm).rename('slope')
-
-    aspect =ee.Terrain.aspect( srtm)
+    # Calculate slope based on the rescaled elevation
+    slope = ee.Terrain.slope(elevation).rename('slope')#.updateMask(ee.Terrain.slope(elevation).isFinite())
+    # elevation = srtm.select('elevation').rename('elevation')
+    # elevation = elevation.resample(resampling)
+    # slope = ee.Terrain.slope(elevation).rename('slope')
+    aspect =ee.Terrain.aspect( elevation)
     image=elevation.addBands([slope, aspect])
-    download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326")
+    download_ee_image(image,os.path.join(directory_path,filename), scale=scale, region=roi, crs="EPSG:4326",resampling=resampling)
     blob_name=os.path.join(bucket_repository,directory_path.split("/")[-1],filename)
     upload_to_gcs(os.path.join(directory_path,filename),blob_name)
     # Adding all indices as bands to the image
@@ -337,7 +343,6 @@ def get_srtm(polygon,directory_path,filename,scale=10):
 
 def get_centroid(polygon):
     roi = Polygon(polygon)
-
     return roi.centroid
 
 
@@ -657,21 +662,36 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
     gdf = gdf.dropna(subset=['geometry'])
     gdf = gdf[gdf[class_name] != ""]
     gdf = gdf[gdf[class_name] != 'arachide+oseille, arachide+niébé']
+    
+
     geoms=gdf.geometry
     try:
         ids=list(gdf[id_column])
     except:
         raise ValueError ("id_column not found in the dataset")
+    gdf = gdf[~gdf[class_name].str.contains(",")]
     gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i").replace(", ","+"))
-    gdf['label'] = gdf[class_name].map(CLASSES_CODES) 
+    gdf = gdf[gdf[class_name] != 'arachide+niebe+herbres+oseille']
+    gdf['label'] = gdf[class_name].map(CLASSES_CODES)
+    print('ici')
+    logger.success(f"Classes codes: [|{CLASSES_CODES}")
     print(gdf[class_name].unique())
     print(len(gdf[class_name].unique()))
     for class_ in gdf[class_name].unique():
         logger.error(f"class: {class_}")
     print(gdf['label'].unique())
-    
-
     shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf["label"])]
+    with ProcessPoolExecutor() as executor:
+        future_to_id = {executor.submit(process_i, i,geom,shapes,dataset_path,str_start_date,str_end_date,geoms,ids,scale): (i,geom) for i,geom in enumerate(geoms)}
+        
+        for i, future in enumerate(as_completed(future_to_id), 1):
+            id = future_to_id[future]
+            try:
+                future.result()
+                logger.success(f"Successfully processed id:  {i}/{len(geoms)}")
+            except Exception as e:
+                logger.error(f"Failed to process id: {i}: {e}")
+    return 
     for i,geom in enumerate(geoms):
        
         id = ids[i]
@@ -688,21 +708,21 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
         end_date = datetime.strptime(str_end_date, "%Y-%m-%d")
 
 
-        while start_date < end_date:
-            if start_date.month == 12:
-                next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
-            else:
-                next_month = start_date.replace(month=start_date.month + 1, day=1)
-            end_of_month = next_month - timedelta(days=1)
-            if end_of_month > end_date:
-                end_of_month = end_date
+        # while start_date < end_date:
+        #     if start_date.month == 12:
+        #         next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
+        #     else:
+        #         next_month = start_date.replace(month=start_date.month + 1, day=1)
+        #     end_of_month = next_month - timedelta(days=1)
+        #     if end_of_month > end_date:
+        #         end_of_month = end_date
            
-            dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
-            filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
-            start_date = next_month
+        #     dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
+        #     filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
+        #     start_date = next_month
 
         get_srtm(polygon,dataset_path,f"{id}_srtm.tif",scale=scale)
-        create_mask(os.path.join(dataset_path,f"{id}_S1_{start_date.year}_{start_date.month-1}.tif"),dataset_path,'{}_label.tif'.format(id),shapes,filename_dw)
+        #create_mask(os.path.join(dataset_path,f"{id}_S1_{start_date.year}_{start_date.month-1}.tif"),dataset_path,'{}_label.tif'.format(id),shapes,filename_dw)
   
 def upload_to_gcs(source_file_path, destination_blob_name):
     
@@ -715,9 +735,39 @@ def read_geojson_from_gcs(bucket_name, source_blob_name):
     blob = bucket.blob(source_blob_name)
     geojson_bytes = blob.download_as_bytes()
     return gpd.read_file(io.BytesIO(geojson_bytes))
+def process_i(i,geom,shapes,dataset_path,str_start_date,str_end_date,geoms,ids,scale=10):
+        id = ids[i]
+    
+        logger.success(f"processing polygon id  {id}: progression {i+1}/{len(geoms)}")
+        if side!=0:
+
+            centroid=geom.centroid
+            polygon=centroid_to_square(centroid,side=side)
+        else:
+            polygon=list(geom.exterior.coords)
+
+        start_date = datetime.strptime(str_start_date, "%Y-%m-%d")
+        end_date = datetime.strptime(str_end_date, "%Y-%m-%d")
+
+
+        # while start_date < end_date:
+        #     if start_date.month == 12:
+        #         next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
+        #     else:
+        #         next_month = start_date.replace(month=start_date.month + 1, day=1)
+        #     end_of_month = next_month - timedelta(days=1)
+        #     if end_of_month > end_date:
+        #         end_of_month = end_date
+           
+        #     dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
+        #     filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
+        #     start_date = next_month
+
+        get_srtm(polygon,dataset_path,f"{id}_srtm.tif",scale=scale)
+        # create_mask(os.path.join(dataset_path,f"{id}_S1_{start_date.year}_{start_date.month-1}.tif"),dataset_path,'{}_label.tif'.format(id),shapes,filename_dw)
 if __name__ == "__main__":
-
-
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import logging
     load_dotenv()
     ee.Initialize()
     storage_client = storage.Client()
@@ -734,7 +784,6 @@ if __name__ == "__main__":
     id_column=os.getenv("ID_COLUMN")
     dataset_name_suffix=os.getenv("DATASET_NAME_SUFFIX")
     os.makedirs(base_dir_dataset_path,exist_ok=True)
-
     main(data_crop_mapping_path,start_date,end_date,scale=scale,side=side,id_column=id_column,dataset_name_suffix=dataset_name_suffix)
 
 

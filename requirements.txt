@@ -39,7 +39,6 @@ geemap==0.34.3
 geocoder==1.38.1
 geopandas==1.0.1
 georaster==1.25
-geospatial-fm==0.1.0
 gitdb==4.0.11
 GitPython==3.1.40
 google-api-core==2.19.0
