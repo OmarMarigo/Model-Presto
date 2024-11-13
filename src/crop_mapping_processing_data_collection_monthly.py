@@ -27,12 +27,14 @@ from datetime import datetime, timedelta
 ee.Authenticate()
 
 
-CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
+"""CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
                 'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mil+mais': 19, 'mil+niebe': 20,
                   'mil+sorgho': 21, 'arachide+mil': 22,"autre":23,"arachide+oseille":24,
                   "arachide+riz":25,"niebe+autre":26,"arachide+mais":27,"arachide+autre":28,
                   "arachide+herbres":29, "herbres":30, "sorgho+mais":31, "autre+arachide":28,
-                  "mil+arachide":22, "mais+mil":19, "arachide+sorgho":32}
+                  "mil+arachide":22, "mais+mil":19, "arachide+sorgho":32} """
+
+CLASSES_CODES={'riz': 0, 'other_1':1, 'other_2': 2}
 
 
 def download_ee_image(
