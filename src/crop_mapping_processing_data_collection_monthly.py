@@ -9,24 +9,29 @@ import ee
 import io
 from rasterio.transform import xy, rowcol, from_origin
 from rasterio.enums import Resampling
-from dotenv import load_dotenv
+from dotenv import load_dotenv # type: ignore
 import pandas as pd
 import rasterio
 import shapely
-import geemap
+
 import xarray
 import numpy as np
 from datetime import datetime
 import os
 import matplotlib.pyplot as plt
-import geemap
-from loguru import logger
+import geemap # type: ignore
+from loguru import logger # type: ignore
 from rasterio.features import rasterize
 from google.cloud import storage
 from datetime import datetime, timedelta
+ee.Initialize(project="ai-modelization")
+
 CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
-                'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mais+mil': 19,'mil+mais': 19,'mil+niebe': 20,
-                  'mil+sorgho': 21, 'arachide+mil': 22,'mil+arachide': 22,"autre":23,"arachide+oseille":24,"arachide+riz":25,"niebe+autre":26,"arachide+mais":27,"arachide+autre":28,"arachide+sorgho":29,"herbres":30}
+                'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mil+mais': 19, 'mil+niebe': 20,
+                  'mil+sorgho': 21, 'arachide+mil': 22,"autre":23,"arachide+oseille":24,
+                  "arachide+riz":25,"niebe+autre":26,"arachide+mais":27,"arachide+autre":28,
+                  "arachide+herbres":29, "herbres":30, "sorgho+mais":31, "autre+arachide":28,
+                  "mil+arachide":22, "mais+mil":19, "arachide+sorgho":32}
 
 
 def download_ee_image(
@@ -84,7 +89,7 @@ def download_ee_image(
         return
 
     try:
-        import geedim as gd
+        import geedim as gd # type: ignore
     except ImportError:
         raise ImportError(
             "Please install geedim using `pip install geedim` or `conda install -c conda-forge geedim`"
@@ -682,15 +687,17 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
     print(gdf['label'].unique())
     shapes = [(geom, value) for geom, value in zip(gdf.geometry, gdf["label"])]
     with ProcessPoolExecutor() as executor:
-        future_to_id = {executor.submit(process_i, i,geom,shapes,dataset_path,str_start_date,str_end_date,geoms,ids,scale): (i,geom) for i,geom in enumerate(geoms)}
+        future_to_id = {executor.submit(process_i, i,geom,shapes,dataset_path,str_start_date,str_end_date,geoms,ids,scale,side): (i,geom) for i,geom in enumerate(geoms)}
         
         for i, future in enumerate(as_completed(future_to_id), 1):
             id = future_to_id[future]
-            try:
-                future.result()
-                logger.success(f"Successfully processed id:  {i}/{len(geoms)}")
-            except Exception as e:
-                logger.error(f"Failed to process id: {i}: {e}")
+            future.result()
+            logger.success(f"Successfully processed id:  {i}/{len(geoms)}")
+            # try:
+            #     future.result()
+            #     logger.success(f"Successfully processed id:  {i}/{len(geoms)}")
+            # except Exception as e:
+            #     logger.error(f"Failed to process id: {i}: {e}")
     return 
     for i,geom in enumerate(geoms):
        
@@ -708,21 +715,21 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
         end_date = datetime.strptime(str_end_date, "%Y-%m-%d")
 
 
-        # while start_date < end_date:
-        #     if start_date.month == 12:
-        #         next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
-        #     else:
-        #         next_month = start_date.replace(month=start_date.month + 1, day=1)
-        #     end_of_month = next_month - timedelta(days=1)
-        #     if end_of_month > end_date:
-        #         end_of_month = end_date
+        while start_date < end_date:
+            if start_date.month == 12:
+                next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
+            else:
+                next_month = start_date.replace(month=start_date.month + 1, day=1)
+            end_of_month = next_month - timedelta(days=1)
+            if end_of_month > end_date:
+                end_of_month = end_date
            
-        #     dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
-        #     filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
-        #     start_date = next_month
+            dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
+            filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
+            start_date = next_month
 
         get_srtm(polygon,dataset_path,f"{id}_srtm.tif",scale=scale)
-        #create_mask(os.path.join(dataset_path,f"{id}_S1_{start_date.year}_{start_date.month-1}.tif"),dataset_path,'{}_label.tif'.format(id),shapes,filename_dw)
+        create_mask(os.path.join(dataset_path,f"{id}_S1_{start_date.year}_{start_date.month-1}.tif"),dataset_path,'{}_label.tif'.format(id),shapes,filename_dw)
   
 def upload_to_gcs(source_file_path, destination_blob_name):
     
@@ -735,7 +742,7 @@ def read_geojson_from_gcs(bucket_name, source_blob_name):
     blob = bucket.blob(source_blob_name)
     geojson_bytes = blob.download_as_bytes()
     return gpd.read_file(io.BytesIO(geojson_bytes))
-def process_i(i,geom,shapes,dataset_path,str_start_date,str_end_date,geoms,ids,scale=10):
+def process_i(i,geom,shapes,dataset_path,str_start_date,str_end_date,geoms,ids,scale,side):
         id = ids[i]
     
         logger.success(f"processing polygon id  {id}: progression {i+1}/{len(geoms)}")
@@ -750,18 +757,18 @@ def process_i(i,geom,shapes,dataset_path,str_start_date,str_end_date,geoms,ids,s
         end_date = datetime.strptime(str_end_date, "%Y-%m-%d")
 
 
-        # while start_date < end_date:
-        #     if start_date.month == 12:
-        #         next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
-        #     else:
-        #         next_month = start_date.replace(month=start_date.month + 1, day=1)
-        #     end_of_month = next_month - timedelta(days=1)
-        #     if end_of_month > end_date:
-        #         end_of_month = end_date
+        while start_date < end_date:
+            if start_date.month == 12:
+                next_month = start_date.replace(year=start_date.year + 1, month=1, day=1)
+            else:
+                next_month = start_date.replace(month=start_date.month + 1, day=1)
+            end_of_month = next_month - timedelta(days=1)
+            if end_of_month > end_date:
+                end_of_month = end_date
            
-        #     dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
-        #     filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
-        #     start_date = next_month
+            dowload_for_one_polygon(id,polygon,start_date,end_date,dataset_path,scale)
+            filename_dw=get_dynamic_world_mode(polygon,start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"),dataset_path,f'{id}_dynamic_world_{start_date.year}_{start_date.month}.tif',scale)
+            start_date = next_month
 
         get_srtm(polygon,dataset_path,f"{id}_srtm.tif",scale=scale)
         # create_mask(os.path.join(dataset_path,f"{id}_S1_{start_date.year}_{start_date.month-1}.tif"),dataset_path,'{}_label.tif'.format(id),shapes,filename_dw)
@@ -769,13 +776,13 @@ if __name__ == "__main__":
     from concurrent.futures import ProcessPoolExecutor, as_completed
     import logging
     load_dotenv()
-    ee.Initialize()
     storage_client = storage.Client()
     data_crop_mapping_path=os.getenv("DATA_CROP_MAPPING_PATH")
     start_date=os.getenv("START_DATE")
     end_date=os.getenv("END_DATE")
     scale=int(os.getenv("SCALE"))
     side=int(os.getenv("SIDE"))
+    print(side)
     bucket_name=os.getenv("BUCKET")
     bucket_repository=os.getenv("BUCKET_REPOSITORY")
     bucket = storage_client.bucket(bucket_name)
@@ -784,6 +791,7 @@ if __name__ == "__main__":
     id_column=os.getenv("ID_COLUMN")
     dataset_name_suffix=os.getenv("DATASET_NAME_SUFFIX")
     os.makedirs(base_dir_dataset_path,exist_ok=True)
+
     main(data_crop_mapping_path,start_date,end_date,scale=scale,side=side,id_column=id_column,dataset_name_suffix=dataset_name_suffix)
 
 
