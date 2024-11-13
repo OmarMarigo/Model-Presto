@@ -24,7 +24,7 @@ from loguru import logger # type: ignore
 from rasterio.features import rasterize
 from google.cloud import storage
 from datetime import datetime, timedelta
-ee.Authenticate()
+
 
 
 """CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
@@ -680,6 +680,7 @@ def main(data_path,str_start_date,str_end_date,scale=10,side=2560,id_column="_id
     gdf = gdf[~gdf[class_name].str.contains(",")]
     gdf[class_name]=gdf[class_name].apply(lambda x:x.lower().replace(' - ','+').replace("é","e").replace("ï","i").replace(", ","+"))
     gdf = gdf[gdf[class_name] != 'arachide+niebe+herbres+oseille']
+    print(gdf)
     gdf['label'] = gdf[class_name].map(CLASSES_CODES)
     print('ici')
     logger.success(f"Classes codes: [|{CLASSES_CODES}")
