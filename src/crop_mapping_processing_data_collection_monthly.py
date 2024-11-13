@@ -781,7 +781,7 @@ if __name__ == "__main__":
     from concurrent.futures import ProcessPoolExecutor, as_completed
     import logging
     load_dotenv()
-    ee.Initialize(project= "ai-modelization")
+    #ee.Initialize(project= "ai-modelization")
     storage_client = storage.Client()
     data_crop_mapping_path=os.getenv("DATA_CROP_MAPPING_PATH")
     start_date=os.getenv("START_DATE")
