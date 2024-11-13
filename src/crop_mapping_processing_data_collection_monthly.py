@@ -26,6 +26,7 @@ from google.cloud import storage
 from datetime import datetime, timedelta
  
 
+ee.Authenticate()
 ee.Initialize(project= "ai-modelization")
 
 """CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
@@ -781,7 +782,6 @@ if __name__ == "__main__":
     from concurrent.futures import ProcessPoolExecutor, as_completed
     import logging
     load_dotenv()
-    #ee.Initialize(project= "ai-modelization")
     storage_client = storage.Client()
     data_crop_mapping_path=os.getenv("DATA_CROP_MAPPING_PATH")
     start_date=os.getenv("START_DATE")
