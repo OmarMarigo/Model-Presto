@@ -26,7 +26,7 @@ from google.cloud import storage
 from datetime import datetime, timedelta
  
 
-ee.Authenticate()
+
 ee.Initialize()
 
 """CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
