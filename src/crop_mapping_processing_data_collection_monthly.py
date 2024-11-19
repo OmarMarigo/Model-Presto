@@ -24,10 +24,10 @@ from loguru import logger # type: ignore
 from rasterio.features import rasterize
 from google.cloud import storage
 from datetime import datetime, timedelta
- 
 
+#ee.Authenticate()
 
-ee.Initialize()
+ee.Initialize(project="ai-modelization")
 
 """CLASSES_CODES={'mil': 10, 'mais': 11, 'arachide': 12, 'oseille': 13, 'sorgho': 14, 'niebe': 15,
                 'pasteque': 16, 'riz': 17, 'arachide+niebe': 18, 'mil+mais': 19, 'mil+niebe': 20,
@@ -163,7 +163,6 @@ def centroid_to_square(centroid, side=2560):
 
 
 
-
 def load_file_apply_buffer_square(data_path, geometry="geometry", side=2560):
     if data_path is not None:
         data = gpd.read_file(data_path).head(5)
@@ -210,7 +209,6 @@ def get_projections(anchor_point=None):
     proj_inverse = Transformer.from_proj(proj, 'EPSG:4326', always_xy=True).transform
 
     return partial(transform, proj), partial(transform, proj_inverse)
-
 
 
 
@@ -743,6 +741,7 @@ def upload_to_gcs(source_file_path, destination_blob_name):
     blob.upload_from_filename(source_file_path)
     print(f"Le fichier {source_file_path} a été téléchargé dans le bucket {bucket_name} avec le nom {destination_blob_name}")
     # Fonction pour lire un fichier GeoJSON directement depuis Google Cloud Storage
+    
 def read_geojson_from_gcs(bucket_name, source_blob_name):
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(source_blob_name)
